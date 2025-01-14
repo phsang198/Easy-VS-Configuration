@@ -30,8 +30,6 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
 
     relative_lib_folder = "$(ProjectDir)Lib"
 
-    # Duyệt qua các thư viện mới
-    
     include_path = f"{relative_lib_folder}\\{lib_name}\\include"
     debug_lib_path = f"{relative_lib_folder}\\{lib_name}\\debug\\lib"
     release_lib_path = f"{relative_lib_folder}\\{lib_name}\\lib"
@@ -42,10 +40,18 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
     for item_group in item_groups:
         # Kiểm tra Condition để xác định Debug hay Release
         condition = item_group.get('Condition', '')
-        if condition == "'$(Configuration)|$(Platform)'=='Debug|x64'" :
+        if condition == "'$(Configuration)|$(Platform)'=='Debug|x64'":
             lib_path = debug_lib_path
-        else:
+            # Lấy danh sách file .lib trong thư mục debug
+            dlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\debug\\lib"
+            lib_files = [f for f in os.listdir(dlp) if f.endswith('.lib')] if os.path.exists(dlp) else []
+        elif condition == "'$(Configuration)|$(Platform)'=='Release|x64'":
             lib_path = release_lib_path
+            # Lấy danh sách file .lib trong thư mục release
+            rlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\lib"
+            lib_files = [f for f in os.listdir(rlp) if f.endswith('.lib')] if os.path.exists(rlp) else []
+        else:
+            continue
 
         # Tìm hoặc tạo các phần tử cần thiết trong ItemDefinitionGroup
         cl_compile = item_group.find("ns:ClCompile", namespace)
@@ -63,6 +69,10 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
         additional_libs = link.find("ns:AdditionalLibraryDirectories", namespace)
         if additional_libs is None:
             additional_libs = ET.SubElement(link, "AdditionalLibraryDirectories")
+            
+        additional_dependencies = link.find("ns:AdditionalDependencies", namespace)
+        if additional_dependencies is None:
+            additional_dependencies = ET.SubElement(link, "AdditionalDependencies")
 
         post_build = item_group.find("ns:PostBuildEvent", namespace)
         if post_build is None:
@@ -84,9 +94,18 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
         elif lib_path not in additional_libs.text:
             additional_libs.text += f";{lib_path}"
 
+        # Thêm các file .lib vào AdditionalDependencies
+        existing_libs = [] if additional_dependencies.text is None else additional_dependencies.text.split(';')
+        for lib_file in lib_files:
+            if lib_file not in existing_libs:
+                if additional_dependencies.text is None:
+                    additional_dependencies.text = lib_file
+                else:
+                    additional_dependencies.text += f";{lib_file}"
+
         # Thêm post-build command
         command = f"xcopy /Y /I \"{relative_lib_folder}\\{lib_name}\\bin\\*\" \"$(OutDir)\""
-        if condition == "'$(Configuration)|$(Platform)'=='Debug|x64'" :
+        if condition == "'$(Configuration)|$(Platform)'=='Debug|x64'":
             command = f"xcopy /Y /I \"{relative_lib_folder}\\{lib_name}\\debug\\bin\\*\" \"$(OutDir)\""
         if command_line.text is None:
             command_line.text = command
