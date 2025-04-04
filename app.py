@@ -33,6 +33,16 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
     include_path = f"{relative_lib_folder}\\{lib_name}\\include"
     debug_lib_path = f"{relative_lib_folder}\\{lib_name}\\debug\\lib"
     release_lib_path = f"{relative_lib_folder}\\{lib_name}\\lib"
+    debug_bin_path = f"{relative_lib_folder}\\{lib_name}\\debug\\bin"
+    release_bin_path = f"{relative_lib_folder}\\{lib_name}\\bin"
+
+    # Check if the required folders exist
+    lib_folder = os.path.join(os.path.dirname(vcxproj_path), "Lib", lib_name)
+    include_exists = os.path.exists(os.path.join(lib_folder, "include"))
+    debug_lib_exists = os.path.exists(os.path.join(lib_folder, "debug", "lib"))
+    release_lib_exists = os.path.exists(os.path.join(lib_folder, "lib"))
+    debug_bin_exists = os.path.exists(os.path.join(lib_folder, "debug", "bin"))
+    release_bin_exists = os.path.exists(os.path.join(lib_folder, "bin"))
     
     # Tìm tất cả ItemDefinitionGroup cho cả Debug và Release
     item_groups = root.findall(".//ns:ItemDefinitionGroup", namespace)
@@ -41,12 +51,18 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
         # Kiểm tra Condition để xác định Debug hay Release
         condition = item_group.get('Condition', '')
         if condition == "'$(Configuration)|$(Platform)'=='Debug|x64'":
+            if not debug_lib_exists:
+                continue
             lib_path = debug_lib_path
+            bin_path = debug_bin_path if debug_bin_exists else None
             # Lấy danh sách file .lib trong thư mục debug
             dlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\debug\\lib"
             lib_files = [f for f in os.listdir(dlp) if f.endswith('.lib')] if os.path.exists(dlp) else []
         elif condition == "'$(Configuration)|$(Platform)'=='Release|x64'":
+            if not release_lib_exists:
+                continue
             lib_path = release_lib_path
+            bin_path = release_bin_path if release_bin_exists else None
             # Lấy danh sách file .lib trong thư mục release
             rlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\lib"
             lib_files = [f for f in os.listdir(rlp) if f.endswith('.lib')] if os.path.exists(rlp) else []
@@ -82,13 +98,14 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
         if command_line is None:
             command_line = ET.SubElement(post_build, "Command")
 
-        # Thêm include path nếu chưa tồn tại
-        if additional_includes.text is None:
-            additional_includes.text = include_path
-        elif include_path not in additional_includes.text:
-            additional_includes.text += f";{include_path}"
+        # Add include path only if it exists
+        if include_exists:
+            if additional_includes.text is None:
+                additional_includes.text = include_path
+            elif include_path not in additional_includes.text:
+                additional_includes.text += f";{include_path}"
 
-        # Thêm lib path nếu chưa tồn tại
+        # Add lib path only if it exists
         if additional_libs.text is None:
             additional_libs.text = lib_path
         elif lib_path not in additional_libs.text:
@@ -103,14 +120,13 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
                 else:
                     additional_dependencies.text += f";{lib_file}"
 
-        # Thêm post-build command
-        command = f"xcopy /Y /I \"{relative_lib_folder}\\{lib_name}\\bin\\*\" \"$(OutDir)\""
-        if condition == "'$(Configuration)|$(Platform)'=='Debug|x64'":
-            command = f"xcopy /Y /I \"{relative_lib_folder}\\{lib_name}\\debug\\bin\\*\" \"$(OutDir)\""
-        if command_line.text is None:
-            command_line.text = command
-        elif command not in command_line.text:
-            command_line.text += f"\r\n{command}"
+        # Add post-build command only if the bin folder exists
+        if bin_path:
+            command = f"xcopy /Y /I \"{bin_path}\\*\" \"$(OutDir)\""
+            if command_line.text is None:
+                command_line.text = command
+            elif command not in command_line.text:
+                command_line.text += f"\r\n{command}"
 
     # Ghi lại file .vcxproj sau khi sửa
     ET.register_namespace('', "http://schemas.microsoft.com/developer/msbuild/2003")
