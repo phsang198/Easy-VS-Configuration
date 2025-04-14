@@ -48,27 +48,30 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
     item_groups = root.findall(".//ns:ItemDefinitionGroup", namespace)
     
     for item_group in item_groups:
+
+        #--------------------------------------------------------------------------------------------------#
         # Kiểm tra Condition để xác định Debug hay Release
+        lib_path = None
+        bin_path = None
+        lib_files = []
         condition = item_group.get('Condition', '')
         if condition == "'$(Configuration)|$(Platform)'=='Debug|x64'":
-            if not debug_lib_exists:
-                continue
-            lib_path = debug_lib_path
+            if debug_lib_exists:
+                lib_path = debug_lib_path
+                # Lấy danh sách file .lib trong thư mục debug
+                dlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\debug\\lib"
+                lib_files = [f for f in os.listdir(dlp) if f.endswith('.lib')] if os.path.exists(dlp) else []
             bin_path = debug_bin_path if debug_bin_exists else None
-            # Lấy danh sách file .lib trong thư mục debug
-            dlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\debug\\lib"
-            lib_files = [f for f in os.listdir(dlp) if f.endswith('.lib')] if os.path.exists(dlp) else []
         elif condition == "'$(Configuration)|$(Platform)'=='Release|x64'":
-            if not release_lib_exists:
-                continue
-            lib_path = release_lib_path
+            if release_lib_exists:
+                lib_path = release_lib_path
+                # Lấy danh sách file .lib trong thư mục release
+                rlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\lib"
+                lib_files = [f for f in os.listdir(rlp) if f.endswith('.lib')] if os.path.exists(rlp) else []
             bin_path = release_bin_path if release_bin_exists else None
-            # Lấy danh sách file .lib trong thư mục release
-            rlp = f"{os.path.dirname(vcxproj_path)}\\Lib\\{lib_name}\\lib"
-            lib_files = [f for f in os.listdir(rlp) if f.endswith('.lib')] if os.path.exists(rlp) else []
         else:
             continue
-
+        #--------------------------------------------------------------------------------------------# ClCompile
         # Tìm hoặc tạo các phần tử cần thiết trong ItemDefinitionGroup
         cl_compile = item_group.find("ns:ClCompile", namespace)
         if cl_compile is None:
@@ -77,7 +80,13 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
         additional_includes = cl_compile.find("ns:AdditionalIncludeDirectories", namespace)
         if additional_includes is None:
             additional_includes = ET.SubElement(cl_compile, "AdditionalIncludeDirectories")
-
+        # Add include path only if it exists
+        if include_exists:
+            if additional_includes.text is None:
+                additional_includes.text = include_path
+            elif include_path not in additional_includes.text:
+                additional_includes.text += f";{include_path}"
+        #--------------------------------------------------------------------------------------------# link
         link = item_group.find("ns:Link", namespace)
         if link is None:
             link = ET.SubElement(item_group, "Link")
@@ -85,31 +94,17 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
         additional_libs = link.find("ns:AdditionalLibraryDirectories", namespace)
         if additional_libs is None:
             additional_libs = ET.SubElement(link, "AdditionalLibraryDirectories")
-            
+        
+        # Add lib path only if it exists
+        if lib_path:
+            if additional_libs.text is None:
+                additional_libs.text = lib_path
+            elif lib_path not in additional_libs.text:
+                additional_libs.text += f";{lib_path}"
+        #--------------------------------------------------------------------------------------------# add file .lib
         additional_dependencies = link.find("ns:AdditionalDependencies", namespace)
         if additional_dependencies is None:
             additional_dependencies = ET.SubElement(link, "AdditionalDependencies")
-
-        post_build = item_group.find("ns:PostBuildEvent", namespace)
-        if post_build is None:
-            post_build = ET.SubElement(item_group, "PostBuildEvent")
-            
-        command_line = post_build.find("ns:Command", namespace)
-        if command_line is None:
-            command_line = ET.SubElement(post_build, "Command")
-
-        # Add include path only if it exists
-        if include_exists:
-            if additional_includes.text is None:
-                additional_includes.text = include_path
-            elif include_path not in additional_includes.text:
-                additional_includes.text += f";{include_path}"
-
-        # Add lib path only if it exists
-        if additional_libs.text is None:
-            additional_libs.text = lib_path
-        elif lib_path not in additional_libs.text:
-            additional_libs.text += f";{lib_path}"
 
         # Thêm các file .lib vào AdditionalDependencies
         existing_libs = [] if additional_dependencies.text is None else additional_dependencies.text.split(';')
@@ -120,9 +115,18 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
                 else:
                     additional_dependencies.text += f";{lib_file}"
 
+        #--------------------------------------------------------------------------------------------# PostBuildEvent
+        post_build = item_group.find("ns:PostBuildEvent", namespace)
+        if post_build is None:
+            post_build = ET.SubElement(item_group, "PostBuildEvent")
+            
+        command_line = post_build.find("ns:Command", namespace)
+        if command_line is None:
+            command_line = ET.SubElement(post_build, "Command")
+
         # Add post-build command only if the bin folder exists
         if bin_path:
-            command = f"xcopy /Y /I \"{bin_path}\\*\" \"$(OutDir)\""
+            command = f"xcopy /E /Y /I \"{bin_path}\\*.*\" \"$(OutDir)\""
             if command_line.text is None:
                 command_line.text = command
             elif command not in command_line.text:
@@ -346,7 +350,6 @@ class CMakeStyleGUI:
     
     def process_library(self, new_libs):
         self.done = 0
-
 
         vcpkg_path = os.path.join(self.config['vcpkg_path'], 'vcpkg.exe')
         if not os.path.exists(vcpkg_path):
