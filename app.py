@@ -22,7 +22,6 @@ config_path = os.path.join(base_path, 'config.json')
 icon_path = os.path.join(base_path, 'icon.ico')
 
 def add_libs_to_vcxproj(vcxproj_path, lib_name):
-  
     # Load file .vcxproj
     tree = ET.parse(vcxproj_path)
     root = tree.getroot()
