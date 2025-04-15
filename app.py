@@ -109,7 +109,7 @@ def add_libs_to_vcxproj(vcxproj_path, lib_name):
         existing_libs = [] if additional_dependencies.text is None else additional_dependencies.text.split(';')
         for lib_file in lib_files:
             if lib_file not in existing_libs:
-                if additional_dependencies.text is None:
+                if additional_dependencies.text is None or additional_dependencies.text == "":
                     additional_dependencies.text = lib_file
                 else:
                     additional_dependencies.text += f";{lib_file}"
