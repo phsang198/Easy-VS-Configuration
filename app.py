@@ -267,6 +267,17 @@ class CMakeStyleGUI:
         self.b_add_lib = ttk.Button(lib_frame, text="Add Library", command=self.add_library)
         self.b_add_lib.pack(side=tk.RIGHT)
 
+        # Frame cho command input
+        cmd_frame = ttk.Frame(self.root, padding="5")  # New frame for command
+        cmd_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(cmd_frame, text="Command     ").pack(side=tk.LEFT)
+        self.cmd_entry = ttk.Entry(cmd_frame)  # New textbox for command
+        self.cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        self.cmd_entry.bind('<Return>', self.on_run_pressed)  # Bind Enter key
+        self.b_run_cmd = ttk.Button(cmd_frame, text="Run", command=self.run_command)  # New button for Run
+        self.b_run_cmd.pack(side=tk.RIGHT)
+
         # Frame cho actions
         action_frame = ttk.Frame(self.root, padding="5")
         action_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -306,6 +317,9 @@ class CMakeStyleGUI:
     def on_enter_pressed(self, event):
         self.add_library()
 
+    def on_run_pressed(self, event):
+        self.run_command()
+
     def browse_vcproj(self):
         filename = filedialog.askopenfilename(
             title="Select vcxproj file",
@@ -341,11 +355,14 @@ class CMakeStyleGUI:
                 self.console_queue.put(f"Error: {line}")
             
             rc = process.poll()
+            
             return rc == 0, kq
 
         except Exception as e:
             self.console_queue.put(f"Error executing command: {str(e)}\n")
             return False
+        finally:
+            self.done = 1
     
     def process_library(self, new_libs):
         self.done = 0
@@ -447,6 +464,27 @@ class CMakeStyleGUI:
         #self.b_add_lib.focus_set()
 
         threading.Thread(target=self.process_library, args=(new_libs,), daemon=True).start()
+
+    def run_command(self):
+        if self.done == 0 :
+            return
+        self.done = 0
+
+        vcpkg_path = self.config['vcpkg_path']
+        if not os.path.exists(vcpkg_path):
+            self.console_queue.put(f"\n-> Error: vcpkg not found at {vcpkg_path}\n")
+            self.done = 1
+            return
+        
+        command = self.cmd_entry.get().strip()
+        if not command:
+            self.console_queue.put("-> Please enter a command to execute\n")
+            return
+        
+        if not command.startswith(f'"{vcpkg_path}"'):
+            command = f'cd /D "{vcpkg_path}" && {command}'
+
+        threading.Thread(target=self.execute_command, args=(command,), daemon=True).start()
 
     def clear_console(self):
         self.console.config(state=tk.NORMAL)
